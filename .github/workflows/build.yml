@@ -1,111 +1,45 @@
-name: WLED Build
+name: Build WLED stairs
 
-# Only included into other workflows
 on:
-  workflow_call:
-    inputs:
-      release:
-        description: 'Build the release env matrix (uses .github/platformio_release.ini.template)'
-        type: boolean
-        default: false
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  workflow_dispatch:
 
 jobs:
-
-  get_default_envs:
-    name: Gather Environments
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Apply release config
-      if: inputs.release
-      run: cp .github/platformio_release.ini.template platformio_release.ini
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-        cache: 'pip'
-    - name: Install PlatformIO
-      run: pip install -r requirements.txt
-    - name: Get default environments
-      id: envs
-      run: |
-        echo "environments=$(pio project config --json-output | jq -cr '.[0][1][0][1]')" >> $GITHUB_OUTPUT
-    outputs:
-      environments: ${{ steps.envs.outputs.environments }}
-
-
   build:
-    name: Build Environments
-    runs-on: ubuntu-latest
-    needs: get_default_envs
-    strategy:
-      fail-fast: false
-      matrix:
-        environment: ${{ fromJSON(needs.get_default_envs.outputs.environments) }}
-    steps:
-    - uses: actions/checkout@v4
-    - name: Apply release config
-      if: inputs.release
-      run: cp .github/platformio_release.ini.template platformio_release.ini
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version-file: '.nvmrc'
-        cache: 'npm'
-    - run: |
-        npm ci
-        VERSION=`date +%y%m%d0`
-        sed -i -r -e "s/define VERSION .+/define VERSION $VERSION/" wled00/wled.h
-    - name: Cache PlatformIO
-      uses: actions/cache@v4
-      with:
-        path: |
-              ~/.platformio/.cache
-              ~/.buildcache
-              build_output
-        key: pio-${{ runner.os }}-${{ matrix.environment }}-${{ hashFiles('platformio.ini', '.github/platformio_release.ini.template', 'pio-scripts/output_bins.py') }}-${{ hashFiles('wled00/**', 'usermods/**') }}
-        restore-keys: pio-${{ runner.os }}-${{ matrix.environment }}-${{ hashFiles('platformio.ini', '.github/platformio_release.ini.template', 'pio-scripts/output_bins.py') }}-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-          python-version: '3.12'
-          cache: 'pip'
-    - name: Install PlatformIO
-      run: pip install -r requirements.txt
-
-    - name: Build firmware
-      run: pio run -e ${{ matrix.environment }}
-    - name: Get artifact name from bin filename
-      id: artifact_name
-      run: |
-        bin=$(ls build_output/release/*.bin 2>/dev/null | head -1)
-        if [ -n "$bin" ]; then
-          # Strip WLED_<version>_ prefix from WLED_<version>_<RELEASE_NAME>.bin
-          base=$(basename "$bin" .bin)
-          release_name=$(echo "$base" | sed 's/^[^_]*_[^_]*_//')
-          echo "name=firmware-$release_name" >> $GITHUB_OUTPUT
-        else
-          echo "name=firmware-${{ matrix.environment }}" >> $GITHUB_OUTPUT
-        fi
-    - uses: actions/upload-artifact@v4
-      with:
-        name: ${{ steps.artifact_name.outputs.name }}
-        path: |
-          build_output/release/*.bin
-          build_output/release/*_ESP02*.bin.gz
-
-
-  testCdata:
-    name: Test cdata.js
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - name: Checkout WLED v16.0.1
+        uses: actions/checkout@v4
         with:
-          node-version-file: '.nvmrc'
-          cache: 'npm'
-      - run: npm ci
-      - run: npm test
+          repository: wled/WLED
+          ref: v16.0.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PlatformIO
+        run: pip install -U platformio
+
+      - name: Add override with Animated Staircase usermod
+        run: |
+          cat > platformio_override.ini << 'EOF'
+          [platformio]
+          default_envs = gl_stairs
+
+          [env:gl_stairs]
+          extends = env:esp32dev
+          custom_usermods = Animated_Staircase
+          EOF
+
+      - name: Build
+        run: pio run -e gl_stairs
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: .pio/build/gl_stairs/*.bin

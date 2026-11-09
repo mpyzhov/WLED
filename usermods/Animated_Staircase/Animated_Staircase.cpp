@@ -480,7 +480,7 @@ class Animated_Staircase : public Usermod {
       segment_delay_ms = (unsigned long) min((unsigned long)10000,max((unsigned long)10,(unsigned long)segment_delay_ms));  // max delay 10s
 
       on_time_ms = top[FPSTR(_onTime)] | on_time_ms/1000;
-      on_time_ms = min(900,max(10,(int)on_time_ms)) * 1000; // min 10s, max 15min
+      on_time_ms = min(900,max(1,(int)on_time_ms)) * 1000; // min 1s, max 15min
 
       useUSSensorTop     = top[FPSTR(_useTopUltrasoundSensor)] | useUSSensorTop;
       topPIRorTriggerPin = top[FPSTR(_topPIRorTrigger_pin)] | topPIRorTriggerPin;
