@@ -1,0 +1,56 @@
+name: Build WLED stairs
+
+on:
+  push:
+    branches: [stairs-handrail]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo (the branch that was pushed)
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PlatformIO and esptool
+        run: pip install -U platformio esptool
+
+      - name: Add override with Animated Staircase usermod
+        run: |
+          cat > platformio_override.ini << 'EOT'
+          [platformio]
+          default_envs = gl_stairs
+
+          [env:gl_stairs]
+          extends = env:esp32dev
+          custom_usermods = Animated_Staircase
+          EOT
+
+      - name: Build
+        run: pio run -e gl_stairs
+
+      - name: Merge full factory image for USB flashing
+        run: |
+          BOOT_APP0=$(find ~/.platformio/packages -name boot_app0.bin | head -1)
+          python -m esptool --chip esp32 merge_bin -o factory.bin \
+            --flash_mode dio --flash_size 4MB \
+            0x1000 .pio/build/gl_stairs/bootloader.bin \
+            0x8000 .pio/build/gl_stairs/partitions.bin \
+            0xe000 "$BOOT_APP0" \
+            0x10000 .pio/build/gl_stairs/firmware.bin
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: |
+            factory.bin
+            .pio/build/gl_stairs/firmware.bin
